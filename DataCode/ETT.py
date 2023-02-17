@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from SeqAttn.Config import *
+from SeqNet.arguments import *
 
 assert data_name == 'ETT'
 
