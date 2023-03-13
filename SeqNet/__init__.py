@@ -1,1 +1,1 @@
-from SeqNet.run import train, load_data, generate_set, test
+from SeqNet.run import train, test, draw

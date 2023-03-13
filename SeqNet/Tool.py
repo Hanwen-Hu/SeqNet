@@ -1,31 +1,33 @@
-# 序列分解
 import torch
-import numpy as np
-from config import args
 
-future_len = args.predict_len
-history_len = 4 * future_len
-window_len = history_len + 1  # 做分解的窗口大小
+from SeqNet.settings import args
+
+from config import basic_args as basic
+
+l_history = basic.scale * basic.l_pred
+l_window = basic.l_pred * 4 + 1  # 做分解的窗口大小
 
 
-def decompose(series):
-    series = series.reshape(-1, args.in_channel)
-    sequence_len = series.shape[0]
-    left = np.ones((window_len // 2, series.shape[1])) * series[:1]
-    right = np.ones((window_len // 2, series.shape[1])) * series[-1:]
-    # 序列分解
-    alpha_series = np.zeros(series.shape)
-    sigma_series = np.zeros(series.shape)
-    mu_series = np.zeros(series.shape)
-    series_c = np.concatenate([left, series, right], axis=0)
-    for i in range(sequence_len):
-        mu_series[i] = np.mean(series_c[i:i + window_len], axis=0)  # 分解得到mu
-    series -= mu_series
-    for i in range(sequence_len):
-        sigma_series[i] = np.sqrt(
-            np.mean(np.power(series[max(0, i - window_len + 1):i + 1], 2), axis=0)) + 1e-5  # 分解得到sigma
-        alpha_series[i] = series[i] / sigma_series[i]  # 分解得到alpha
-    return alpha_series, sigma_series, mu_series
+def decompose(series, k_res=None, k_avg=None):
+    series = series.reshape(series.shape[0], -1)
+    l_seq, d_seq = series.shape[0], series.shape[1]
+    left = torch.ones(l_window // 2, d_seq).to(args.device) * series[:1]
+    right = torch.ones(l_window // 2, d_seq).to(args.device) * series[-1:]
+    padded = torch.cat([left, series, right], dim=0)
+    window_tool = torch.nn.AvgPool1d(l_window, stride=1)
+    avg = window_tool(padded.transpose(0, 1)).transpose(0, 1)
+    res = series - avg
+    if k_res is None:
+        k_res = torch.std(res, dim=0, keepdim=True)
+        k_avg = torch.std(avg, dim=0, keepdim=True)
+        v = k_avg[0, -1]
+        k_avg = k_avg / v
+        res /= k_res
+        avg /= k_avg
+    else:
+        res /= k_res
+        avg /= k_avg
+    return torch.cat([res, avg], dim=-1), k_res, k_avg
 
 
 def slicing(x, slice_step, slice_len):

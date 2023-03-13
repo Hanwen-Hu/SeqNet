@@ -1,7 +1,8 @@
-import SeqNet as seq
+import SeqNet
 
-a, m, s = seq.load_data()
-a = seq.generate_set(a)
-model = seq.train(a, 1)
-print(seq.test(1))
+model_list = {'SeqNet': SeqNet}
 
+_, k_r, k_a = SeqNet.train()
+print(SeqNet.test('Train'))
+print(SeqNet.test('Test'))
+SeqNet.draw('Test')

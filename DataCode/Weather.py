@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from SeqNet.arguments import *
+from SeqNet.settings import *
 
 assert data_name == 'Weather'
 

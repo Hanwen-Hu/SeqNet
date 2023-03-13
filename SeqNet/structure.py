@@ -2,37 +2,56 @@ import torch
 import torch.nn as nn
 
 import SeqNet.unit as u
-import SeqNet.arguments as self_args
+from SeqNet.settings import args
 from SeqNet.tool import slicing
-from config import args
 
-class SeqNet(nn.Module):
-    def __init__(self, mode = 0):
+from config import basic_args as basic
+
+
+class Model(nn.Module):
+    def __init__(self):
         super().__init__()
-        self.mode = mode
-        self.predict_len = args.predict_len
-        self.slice_step = (args.history_scale -1) * self.predict_len // (self_args.slice_num -1)
-        self.embed = nn.Linear(self_args.slice_num*args.in_channel, self_args.embed_dim)
-        if mode == 0:
-            layer = u.Layer(args.predict_len, self_args.pattern_num, stable=True)
-        elif mode == 1:
-            layer = u.Layer(args.predict_len, self_args.trend_num, stable=False)
-        else:
-            layer = nn.Linear(args.predict_len, args.predict_len)
-        self.coder = u.Coder(layer, self_args.layer_num)
-        self.generator = u.Generator(self_args.embed_dim, args.out_channel)
-        self.simpler = nn.Linear(args.predict_len * args.in_channel * args.history_scale, args.predict_len * args.out_channel)
-
+        self.model_alpha = PeriodNet()
+        self.model_mu = TrendNet()
 
     # 输入历史序列，维度为batch*embed_dim*dim
+    def forward(self, alpha, mu):
+        alpha = self.model_alpha(alpha)
+        mu = self.model_mu(mu)
+        return alpha, mu
+
+
+class PeriodNet(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.predict_len = basic.l_pred
+        self.slice_step = (basic.scale - 1) * self.predict_len // (args.slice_num - 1)
+        self.embed = nn.Linear(args.slice_num * basic.d_in, args.embed_dim)
+        layer = u.Layer(basic.l_pred, args.pattern_dim, stable=True)
+        self.coder = u.Coder(layer, args.period_layer)
+        self.generator = u.Generator(args.embed_dim, basic.d_out)
+
     def forward(self, x):
-        #mean = torch.mean(x, dim=-2, keepdim=True)
-        #x -= mean
         x = slicing(x, self.slice_step, self.predict_len)
-        x = self.embed(x.transpose(-1,-2)).transpose(-1, -2)
+        x = self.embed(x.transpose(-1, -2)).transpose(-1, -2)
+        x = self.coder(x)
+        return self.generator(x)
+
+
+class TrendNet(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.slice_step = (basic.scale - 1) * basic.l_pred // (args.slice_num - 1)
+        layer = u.Layer(basic.l_pred, args.pattern_dim, stable=False)
+        self.coder = u.Coder(layer, args.trend_layer)
+        self.generator = u.Generator(args.embed_dim, basic.d_out)
+        self.embed = nn.Linear(args.slice_num * basic.d_in, args.embed_dim)
+
+    def forward(self, x):
+        mean = torch.mean(x, dim=-2, keepdim=True)
+        x = x - mean
+        x = slicing(x, self.slice_step, basic.l_pred)
+        x = self.embed(x.transpose(-1, -2)).transpose(-1, -2)
         x = self.coder(x)
         x = self.generator(x)
-        # x = x.reshape(x.shape[0], -1)
-        # x = self.simpler(x)
-        # x = x.reshape(x.shape[0], -1, args.out_channel)
-        return x #+ mean[:, :, -args.out_channel:]
+        return x + mean[:, :, -basic.d_out:]
